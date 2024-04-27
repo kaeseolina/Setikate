@@ -1,68 +1,76 @@
 import torch
+import torchvision
+import torchvision.transforms as transforms
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
-from torchvision import datasets, transforms
+import random
 
-# Определение класса для нашей нейронной сети
-class Net(nn.Module):
+
+input_size = 28 * 28  # Размер изображения
+output_size = 4  # Количество символов
+# Описание работы
+print("Количество входных сигналов =", input_size)
+print("Количество выходных сигналов =", output_size)
+print("Алгоритм обучения: Однослойный персептрон, метод стохастического градиентного спуска")
+print("")
+
+# Загрузка данных MNIST
+transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
+trainset = torchvision.datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=64, shuffle=True)
+testset = torchvision.datasets.MNIST(root='./data', train=False, download=True, transform=transform)
+testloader = torch.utils.data.DataLoader(testset, batch_size=64, shuffle=False)
+
+# Определение архитектуры нейронной сети
+class NeuralNetwork(nn.Module):
     def __init__(self):
-        super(Net, self).__init__()
-        self.fc1 = nn.Linear(28 * 28, 128)
-        self.fc2 = nn.Linear(128, 64)
-        self.fc3 = nn.Linear(64, 10)
+        super(NeuralNetwork, self).__init__()
+        self.flatten = nn.Flatten()
+        self.linear = nn.Linear(28 * 28, 10)  # Входной слой: 28*28 пикселей, выходной слой: 10 классов
 
     def forward(self, x):
-        x = x.view(-1, 28 * 28)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return F.log_softmax(x, dim=1)
+        x = self.flatten(x)
+        x = self.linear(x)
+        return x
 
-# Загрузка данных MNIST и создание загрузчиков данных
-transform = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize((0.1307,), (0.3081,))
-])
+# Инициализация нейронной сети
+net = NeuralNetwork()
 
-train_dataset = datasets.MNIST('data', train=True, download=True, transform=transform)
-test_dataset = datasets.MNIST('data', train=False, download=True, transform=transform)
-
-train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True)
-test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=64, shuffle=False)
-
-# Инициализация модели, функции потерь и оптимизатора
-model = Net()
+# Определение функции потерь и оптимизатора
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.SGD(net.parameters(), lr=0.01)
 
-# Обучение модели
-epochs = 10
-for epoch in range(epochs):
-    model.train()
+# Обучение нейронной сети
+print("\nОбучение нейронной сети:")
+for epoch in range(5):  # Количество эпох
     running_loss = 0.0
-    for data, target in train_loader:
+    for i, data in enumerate(trainloader, 0):
+        inputs, labels = data
         optimizer.zero_grad()
-        output = model(data)
-        loss = criterion(output, target)
+        outputs = net(inputs)
+        loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
-        running_loss += loss.item() * data.size(0)
-    
-    # Выводим среднюю потерю на каждой эпохе
-    train_loss = running_loss / len(train_loader.dataset)
-    print(f"Epoch {epoch+1}/{epochs}, Training Loss: {train_loss:.6f}")
+        running_loss += loss.item()
+    print(f"Эпоха {epoch + 1}, Loss: {running_loss / len(trainloader)}")
 
-# Оценка модели на тестовом наборе
-model.eval()
+# Оценка точности на тестовом наборе
 correct = 0
 total = 0
 with torch.no_grad():
-    for data, target in test_loader:
-        output = model(data)
-        _, predicted = torch.max(output.data, 1)
-        total += target.size(0)
-        correct += (predicted == target).sum().item()
+    for data in testloader:
+        images, labels = data
+        outputs = net(images)
+        _, predicted = torch.max(outputs.data, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
 
-accuracy = correct / total
-print(f"Test Accuracy: {accuracy * 100:.2f}%")
+print(f"\nТочность на тестовом наборе: {100 * correct / total}%")
+
+# Тестирование на случайном изображении
+print("\nТестирование на случайном изображении:")
+random_index = random.randint(0, len(testset))
+image, label = testset[random_index]
+output = net(image.unsqueeze(0))  # Размерность изображения: (1, 1, 28, 28)
+_, predicted = torch.max(output, 1)
+print(f"Истинная метка: {label}, Предсказанная метка: {predicted.item()}")
